@@ -46,7 +46,7 @@ test('validación y métodos', async () => {
     assert.equal((await fetch(`${base}/api/run`)).status, 405);
     assert.equal((await fetch(`${base}/api/run`, { method: 'POST', body: '{}' })).status, 415);
     assert.equal((await fetch(`${base}/api/run`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{no json' })).status, 400);
-    assert.equal((await post(base, { code: 'x'.repeat(200_000) }).catch(() => ({ status: 413 }))).status, 413);
+    assert.equal((await post(base, { code: 'x'.repeat(200_000) })).status, 413);
   });
 });
 

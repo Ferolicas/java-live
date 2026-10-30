@@ -64,7 +64,7 @@ function createServer(opts = {}) {
       const chunks = [];
       req.on('data', (c) => {
         size += c.length;
-        if (size > limit) { reject(Object.assign(new Error('grande'), { status: 413 })); req.destroy(); return; }
+        if (size > limit) { if (size - c.length <= limit) reject(Object.assign(new Error('grande'), { status: 413 })); return; }
         chunks.push(c);
       });
       req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
@@ -79,7 +79,7 @@ function createServer(opts = {}) {
 
     let body;
     try { body = JSON.parse(await readBody(req, 80_000)); }
-    catch (e) { return send(res, e.status || 400, { error: e.status === 413 ? 'Petición demasiado grande' : 'JSON no válido' }); }
+    catch (e) { return send(res, e.status || 400, { error: e.status === 413 ? 'Petición demasiado grande' : 'JSON no válido' }, e.status === 413 ? { Connection: 'close' } : {}); }
     const problem = validate(body);
     if (problem) return send(res, 400, { error: problem });
 
