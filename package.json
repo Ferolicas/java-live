@@ -1,0 +1,12 @@
+{
+  "name": "java-live",
+  "version": "1.0.0",
+  "description": "Editor de Java en el navegador con compilación y ejecución en tiempo real (olcas.app/java)",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/"
+  }
+}

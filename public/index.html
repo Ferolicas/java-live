@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Java Live</title>
+<meta name="description" content="Escribe Java a la izquierda y mira el resultado a la derecha, compilado y ejecutado en tiempo real.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23e76f00'/%3E%3Cpath d='M9 8h14v3h-5v9a5 5 0 0 1-5 5h-3v-3h2.5a2.5 2.5 0 0 0 2.5-2.5V11H9z' fill='white'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="vendor/codemirror.min.css">
+<link rel="stylesheet" href="vendor/theme/neo.min.css">
+<link rel="stylesheet" href="vendor/theme/material-darker.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand"><span class="logo" aria-hidden="true">J</span><h1>Java Live</h1></div>
+  <div class="actions">
+    <span id="status" class="status" data-state="idle" role="status" aria-live="polite">Listo</span>
+    <label class="auto" title="Compila y ejecuta solo cuando dejas de escribir">
+      <input type="checkbox" id="auto" checked><span>Auto</span>
+    </label>
+    <button id="run" class="btn primary" type="button" title="Ctrl + Intro">▶ Ejecutar</button>
+    <button id="download" class="btn" type="button" title="Ctrl + S">⬇ Descargar .java</button>
+    <button id="reset" class="btn ghost" type="button" title="Volver al ejemplo inicial">Reiniciar</button>
+  </div>
+</header>
+
+<main class="panes">
+  <section class="pane" aria-label="Código">
+    <div class="pane-head"><span class="tab" id="filename">Main.java</span><span class="hint">Ctrl + Intro ejecuta · Ctrl + S descarga</span></div>
+    <div id="editor" class="editor"></div>
+  </section>
+
+  <section class="pane" aria-label="Resultado">
+    <div class="pane-head"><span class="tab">Salida</span><span class="hint" id="timing"></span></div>
+    <pre id="out" class="out" tabindex="0"><span class="muted">Escribe código a la izquierda: se compila y se ejecuta solo.</span></pre>
+    <div class="stdin">
+      <label for="stdin" class="pane-head"><span class="tab">Entrada (lo que teclearías en consola)</span><span class="hint">una línea por cada lectura</span></label>
+      <textarea id="stdin" rows="3" spellcheck="false" placeholder="Si tu programa usa Scanner, escribe aquí los datos"></textarea>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">Cada ejecución corre aislada en el servidor: sin red, 5 s y 128 MB como máximo.</footer>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="vendor/codemirror.min.js"></script>
+<script src="vendor/mode/clike/clike.min.js"></script>
+<script src="vendor/addon/edit/closebrackets.min.js"></script>
+<script src="vendor/addon/edit/matchbrackets.min.js"></script>
+<script src="vendor/addon/selection/active-line.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

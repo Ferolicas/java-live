@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Despliegue de java-live en el VPS. Instalado en /usr/local/sbin/java-live-deploy.
+# Lo ejecuta GitHub Actions por SSH con una llave restringida a este único comando:
+#   ssh deploy "<sha>" < release.tgz
+# Flujo: extraer release → cambio atómico de `current` → recargar PM2 → comprobar salud → (si falla) volver atrás.
+set -euo pipefail
+
+APP=/var/www/java-live
+NAME=java-live
+PORT=4012
+SHA="${SSH_ORIGINAL_COMMAND:-${1:-}}"
+[[ "$SHA" =~ ^[0-9a-f]{7,40}$ ]] || { echo "sha no válido: '$SHA'" >&2; exit 2; }
+
+exec 9>/run/lock/java-live-deploy.lock
+flock -n 9 || { echo "ya hay un despliegue en curso" >&2; exit 3; }
+
+REL="$APP/releases/$SHA"
+rm -rf "$REL"; mkdir -p "$REL"
+tar -xzf - -C "$REL" --no-same-owner
+[ -f "$REL/server.js" ] || { echo "el paquete no contiene server.js" >&2; rm -rf "$REL"; exit 4; }
+chmod -R go-w,a+rX "$REL"
+
+PREV="$(readlink -f "$APP/current" 2>/dev/null || true)"
+echo "→ activando $SHA"
+ln -sfn "$REL" "$APP/current.new" && mv -T "$APP/current.new" "$APP/current"
+if pm2 describe "$NAME" >/dev/null 2>&1; then pm2 restart "$NAME" --update-env >/dev/null; else pm2 start "$APP/ecosystem.config.cjs" >/dev/null; fi
+pm2 save >/dev/null
+
+echo "→ comprobando salud"
+for i in $(seq 1 30); do
+  if curl -fsS -m 3 "http://127.0.0.1:${PORT}/api/health" >/dev/null 2>&1; then
+    echo "OK: $SHA en producción"
+    ls -1dt "$APP"/releases/*/ | tail -n +5 | while read -r old; do [ "$(readlink -f "${old%/}")" = "$(readlink -f "$APP/current")" ] || rm -rf "$old"; done
+    exit 0
+  fi
+  sleep 1
+done
+
+echo "FALLO: la nueva versión no responde" >&2
+if [ -n "$PREV" ] && [ -d "$PREV" ]; then
+  echo "→ restaurando $(basename "$PREV")" >&2
+  ln -sfn "$PREV" "$APP/current.new" && mv -T "$APP/current.new" "$APP/current"
+  pm2 restart "$NAME" --update-env >/dev/null || true
+fi
+rm -rf "$REL"
+exit 1

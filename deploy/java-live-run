@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Ejecuta compilación/ejecución de Java ajeno dentro de una unidad transitoria de systemd.
+# Instalado en /usr/local/sbin/java-live-run; lo invoca el usuario javalive vía sudo (ver sudoers).
+#   java-live-run compile <jobid> <Archivo.java>
+#   java-live-run run     <jobid> <clase.principal>
+#   java-live-run stop    <jobid>
+#   java-live-run clean   <jobid>
+set -euo pipefail
+
+BASE=/var/lib/java-live
+JDK=/usr/lib/jvm/java-21-openjdk-amd64
+phase="${1:-}"; id="${2:-}"; arg="${3:-}"
+
+[[ "$id" =~ ^[0-9a-f]{32}$ ]] || exit 64
+job="$BASE/jobs/$id"
+
+case "$phase" in
+  stop)
+    systemctl kill --signal=SIGKILL "java-live-$id-compile.service" "java-live-$id-run.service" 2>/dev/null || true
+    exit 0 ;;
+  clean)
+    [ -d "$job" ] && [ ! -L "$job" ] || exit 0
+    rm -rf --one-file-system -- "$job"
+    exit 0 ;;
+  compile|run) ;;
+  *) exit 64 ;;
+esac
+
+[ -d "$job" ] && [ ! -L "$job" ] || exit 65
+
+if [ "$phase" = compile ]; then
+  [[ "$arg" =~ ^[A-Za-z_][A-Za-z0-9_]*\.java$ ]] || exit 66
+  mem=512M; tasks=64; limit=15; umask_=0022
+  cmd=(/usr/bin/timeout --signal=TERM --kill-after=2 "${limit}s" "$JDK/bin/javac"
+       -encoding UTF-8 -proc:none -Xmaxerrs 20 -d . -J-Xmx256m -J-XX:+UseSerialGC -J-XX:TieredStopAtLevel=1 "$arg")
+else
+  [[ "$arg" =~ ^[A-Za-z_][A-Za-z0-9_.]*$ ]] || exit 66
+  mem=256M; tasks=64; limit=5; umask_=0077
+  cmd=(/usr/bin/timeout --signal=TERM --kill-after=1 "${limit}s" "$JDK/bin/java"
+       -Xmx128m -Xss1m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:-UsePerfData -Xshare:auto
+       -Djava.io.tmpdir=/work -cp /work "$arg")
+fi
+
+exec systemd-run --quiet --pipe --wait --collect --unit="java-live-$id-$phase" \
+  -p DynamicUser=yes \
+  -p RootDirectory="$BASE/root" \
+  -p BindReadOnlyPaths="/usr/lib /usr/lib64 /usr/bin/timeout /etc/java-21-openjdk /etc/ld.so.cache" \
+  -p BindPaths="$job:/work" \
+  -p WorkingDirectory=/work \
+  -p MountAPIVFS=yes -p PrivateDevices=yes -p PrivateTmp=yes -p ProcSubset=pid -p ProtectProc=invisible \
+  -p PrivateNetwork=yes -p IPAddressDeny=any -p RestrictAddressFamilies=AF_UNIX \
+  -p NoNewPrivileges=yes -p CapabilityBoundingSet= -p AmbientCapabilities= \
+  -p ProtectKernelTunables=yes -p ProtectKernelModules=yes -p ProtectKernelLogs=yes -p ProtectClock=yes \
+  -p ProtectControlGroups=yes -p ProtectHostname=yes -p LockPersonality=yes \
+  -p RestrictNamespaces=yes -p RestrictRealtime=yes -p RestrictSUIDSGID=yes \
+  -p SystemCallArchitectures=native -p SystemCallFilter="@system-service" -p SystemCallFilter="~@privileged @resources" \
+  -p MemoryMax="$mem" -p MemorySwapMax=0 -p TasksMax="$tasks" -p CPUQuota=100% \
+  -p LimitNOFILE=128 -p LimitFSIZE=4M -p LimitCORE=0 -p UMask="$umask_" \
+  -p RuntimeMaxSec="$((limit + 4))" \
+  -- "${cmd[@]}"
