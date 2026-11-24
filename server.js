@@ -47,7 +47,10 @@ function createServer(opts = {}) {
   };
 
   function serveStatic(req, res, pathname) {
-    const rel = pathname === '/' ? 'index.html' : decodeURIComponent(pathname).replace(/^\/+/, '');
+    let rel;
+    try { rel = pathname === '/' ? 'index.html' : decodeURIComponent(pathname).replace(/^\/+/, ''); }
+    catch { return send(res, 400, 'Petición no válida'); } // %-codificación rota (p. ej. "/%")
+    if (rel.includes('\0')) return send(res, 400, 'Petición no válida');
     const file = path.resolve(PUBLIC_DIR, rel);
     if (!file.startsWith(PUBLIC_DIR + path.sep)) return send(res, 404, 'No encontrado');
     fs.readFile(file, (err, data) => {
@@ -106,8 +109,10 @@ function createServer(opts = {}) {
     }
   }
 
-  const server = http.createServer((req, res) => {
-    const { pathname } = new URL(req.url, 'http://x');
+  function route(req, res) {
+    let pathname;
+    try { ({ pathname } = new URL(req.url, 'http://x')); }
+    catch { return send(res, 400, 'Petición no válida'); } // p. ej. "//" o "http://["
     if (req.method === 'GET' && pathname === '/api/health') {
       return runner.ready() ? send(res, 200, { ok: true, runner: runner.mode, ...gate.stats() }) : send(res, 503, { ok: false });
     }
@@ -117,6 +122,17 @@ function createServer(opts = {}) {
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Método no permitido');
     return serveStatic(req, res, pathname);
+  }
+
+  // Ninguna petición, por rara que sea, debe tumbar el proceso: una excepción sin capturar en el
+  // manejador lo mataría (y con él las ejecuciones en curso de todos los demás).
+  const fail = (res, e) => {
+    console.error(JSON.stringify({ level: 'error', msg: 'fallo al atender la petición', err: String(e && e.message).slice(0, 200) }));
+    if (!res.headersSent) send(res, 500, 'Error interno'); else res.destroy();
+  };
+  const server = http.createServer((req, res) => {
+    try { Promise.resolve(route(req, res)).catch((e) => fail(res, e)); }
+    catch (e) { fail(res, e); }
   });
   server.headersTimeout = 10_000;
   server.requestTimeout = 15_000;

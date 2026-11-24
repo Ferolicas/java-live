@@ -40,6 +40,25 @@ test('no sirve nada fuera de public (path traversal)', async () => {
   });
 });
 
+test('una URL mal formada responde 400 y no tumba el proceso', async () => {
+  const net = require('node:net');
+  await withServer({}, async (base) => {
+    const port = Number(new URL(base).port);
+    // fetch normaliza la URL, así que la línea de petición se envía tal cual por el socket
+    const raw = (target) => new Promise((resolve, reject) => {
+      const c = net.connect(port, '127.0.0.1', () => c.write(`GET ${target} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`));
+      let data = '';
+      c.on('data', (d) => { data += d; });
+      c.on('close', () => resolve(data.split('\r\n')[0]));
+      c.on('error', reject);
+    });
+    for (const target of ['/%', '/%E0%A4%A', '/%00', '/a%00.js', '//', 'http://[']) {
+      assert.equal(await raw(target), 'HTTP/1.1 400 Bad Request', target);
+    }
+    assert.equal((await fetch(`${base}/api/health`)).status, 200); // sigue vivo
+  });
+});
+
 test('validación y métodos', async () => {
   await withServer({}, async (base) => {
     assert.equal((await post(base, { code: '' })).status, 400);
